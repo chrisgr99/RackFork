@@ -35,6 +35,9 @@ struct RackScrollWidget : ui::ScrollWidget {
 	void zoomToBound(math::Rect bound);
 
 	void step() override;
+	/** Option-held navigation: enters/leaves the mode and runs the edge scroll.
+	Non-virtual, so this adds no vtable slot. See design/zoom-pan.md. */
+	PRIVATE void navStep();
 	void draw(const DrawArgs& args) override;
 	void onHoverKey(const HoverKeyEvent& e) override;
 	void onHoverScroll(const HoverScrollEvent& e) override;

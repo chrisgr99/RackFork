@@ -5,6 +5,7 @@
 // Panel brightness reduction. Private header, not part of the plugin API.
 // See design/panel-dimming.md.
 #include "../window/panelDim.hpp"
+#include "../app/navMode.hpp"
 
 
 namespace rack {
@@ -109,15 +110,24 @@ void FramebufferWidget::draw(const DrawArgs& args) {
 	math::Vec offsetI = offset.floor();
 	math::Vec offsetF = offset.minus(offsetI);
 
+	// While Option-held navigation is in progress, do NOT invalidate on scale or subpixel
+	// change. Letting the cached texture stretch instead is what makes zooming smooth --
+	// the draw below already computes a scaleRatio and stretches the image, so nothing new
+	// is needed. It also stops panel brightness reduction re-filtering every panel every
+	// frame. Panels look soft while zoomed in during the gesture and sharpen on release,
+	// automatically: once the mode ends the scale no longer matches and this re-renders.
+	// See design/zoom-pan.md.
+	const bool navigating = app::navModeActive();
+
 	// Re-render if drawing to a new subpixel location.
 	// Anything less than 0.1 pixels isn't noticeable.
 	math::Vec offsetFDelta = offsetF.minus(internal->fbOffsetF);
-	if (dirtyOnSubpixelChange && APP->window->fbDirtyOnSubpixelChange() && offsetFDelta.square() >= std::pow(0.1f, 2)) {
+	if (!navigating && dirtyOnSubpixelChange && APP->window->fbDirtyOnSubpixelChange() && offsetFDelta.square() >= std::pow(0.1f, 2)) {
 		// DEBUG("%p dirty subpixel (%f, %f) (%f, %f)", this, VEC_ARGS(offsetF), VEC_ARGS(internal->fbOffsetF));
 		setDirty();
 	}
 	// Re-render if rescaled.
-	else if (!scale.equals(internal->fbScale)) {
+	else if (!navigating && !scale.equals(internal->fbScale)) {
 		// DEBUG("%p dirty scale", this);
 		setDirty();
 	}

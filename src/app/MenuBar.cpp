@@ -298,6 +298,109 @@ struct CableTensionSlider : ui::Slider {
 /** How hard the brightest large regions are dimmed. Presented as "strength" running the
 opposite way to the underlying multiplier, because "70% dimming" is easier to reason
 about than "a multiplier of 0.3". */
+////////////////////
+// Option-held navigation — see design/zoom-pan.md
+////////////////////
+
+struct NavPanGainQuantity : Quantity {
+	void setValue(float value) override {
+		settings::navPanGain = math::clamp(value, getMinValue(), getMaxValue());
+	}
+	float getValue() override {
+		return settings::navPanGain;
+	}
+	float getDefaultValue() override {
+		return 3.f;
+	}
+	float getMinValue() override {
+		return 1.f;
+	}
+	float getMaxValue() override {
+		return 8.f;
+	}
+	std::string getLabel() override {
+		return "Pointer travel";
+	}
+	std::string getUnit() override {
+		return "x";
+	}
+};
+struct NavPanGainSlider : ui::Slider {
+	NavPanGainSlider() {
+		quantity = new NavPanGainQuantity;
+	}
+	~NavPanGainSlider() {
+		delete quantity;
+	}
+};
+
+
+struct NavEdgeMarginQuantity : Quantity {
+	void setValue(float value) override {
+		settings::navEdgeMargin = math::clamp(value, getMinValue(), getMaxValue());
+	}
+	float getValue() override {
+		return settings::navEdgeMargin;
+	}
+	float getDefaultValue() override {
+		return 24.f;
+	}
+	float getMinValue() override {
+		return 4.f;
+	}
+	float getMaxValue() override {
+		return 120.f;
+	}
+	std::string getLabel() override {
+		return "Edge zone";
+	}
+	std::string getUnit() override {
+		return " px";
+	}
+};
+struct NavEdgeMarginSlider : ui::Slider {
+	NavEdgeMarginSlider() {
+		quantity = new NavEdgeMarginQuantity;
+	}
+	~NavEdgeMarginSlider() {
+		delete quantity;
+	}
+};
+
+
+struct NavEdgeRateQuantity : Quantity {
+	void setValue(float value) override {
+		settings::navEdgeRate = math::clamp(value, getMinValue(), getMaxValue());
+	}
+	float getValue() override {
+		return settings::navEdgeRate;
+	}
+	float getDefaultValue() override {
+		return 840.f;
+	}
+	float getMinValue() override {
+		return 100.f;
+	}
+	float getMaxValue() override {
+		return 3000.f;
+	}
+	std::string getLabel() override {
+		return "Edge speed";
+	}
+	std::string getUnit() override {
+		return " px/s";
+	}
+};
+struct NavEdgeRateSlider : ui::Slider {
+	NavEdgeRateSlider() {
+		quantity = new NavEdgeRateQuantity;
+	}
+	~NavEdgeRateSlider() {
+		delete quantity;
+	}
+};
+
+
 struct PanelDimAttenuationQuantity : Quantity {
 	void setValue(float value) override {
 		settings::panelDimMaxAttenuation = 1.f - math::clamp(value, 0.f, 1.f);
@@ -872,6 +975,29 @@ struct ViewButton : MenuButton {
 				settings::panelDimStrengths.clear();
 				window::panelDimRefresh();
 			}));
+		}));
+
+		// Option-held navigation — see design/zoom-pan.md
+		menu->addChild(createSubmenuItem("Navigation with Option held", "", [=](ui::Menu* menu) {
+			menu->addChild(createBoolPtrMenuItem("Enabled", "", &settings::navPanEnabled));
+
+			menu->addChild(new ui::MenuSeparator);
+			menu->addChild(createMenuLabel("Hold Option: the view chases the pointer,"));
+			menu->addChild(createMenuLabel("the wheel zooms, and holding near an edge"));
+			menu->addChild(createMenuLabel("keeps travelling. Clicks are ignored."));
+			menu->addChild(new ui::MenuSeparator);
+
+			NavPanGainSlider* gainSlider = new NavPanGainSlider;
+			gainSlider->box.size.x = 250.0;
+			menu->addChild(gainSlider);
+
+			NavEdgeMarginSlider* marginSlider = new NavEdgeMarginSlider;
+			marginSlider->box.size.x = 250.0;
+			menu->addChild(marginSlider);
+
+			NavEdgeRateSlider* rateSlider = new NavEdgeRateSlider;
+			rateSlider->box.size.x = 250.0;
+			menu->addChild(rateSlider);
 		}));
 
 		// Drawn knobs and jacks — see design/control-appearance.md

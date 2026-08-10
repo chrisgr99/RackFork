@@ -1,4 +1,5 @@
 #include <app/RackScrollWidget.hpp>
+#include "navMode.hpp"
 #include <app/Scene.hpp>
 #include <app/RackWidget.hpp>
 #include <app/ModuleWidget.hpp>
@@ -16,6 +17,17 @@ struct RackScrollWidget::Internal {
 	/** For viewport expanding */
 	float oldZoom = 0.f;
 	math::Vec oldOffset;
+
+	// ---- Option-held navigation. See design/zoom-pan.md.
+	// This struct is opaque, defined here rather than in the SDK header, so adding fields
+	// is invisible to plugins and carries no ABI risk.
+	bool navActive = false;
+	/** Last pointer position seen by onHover, in this widget's coordinates. */
+	math::Vec navMousePos;
+	/** Whether a hover arrived recently. Edge-scrolling reads navMousePos, and must not
+	act on a stale coordinate: move the pointer onto the menu bar and hovers stop
+	arriving, so edge-scrolling should stop rather than run away. */
+	bool navHoverFresh = false;
 };
 
 
@@ -140,6 +152,60 @@ void RackScrollWidget::step() {
 
 	internal->oldOffset = offset;
 	internal->oldZoom = zoom;
+
+	navStep();
+}
+
+
+/** Enters and leaves Option-held navigation, and runs the edge scroll.
+
+Mode state is POLLED here rather than driven by key events, so releasing Option while the
+window is unfocused cannot strand you in the mode.
+*/
+void RackScrollWidget::navStep() {
+	const bool wasActive = internal->navActive;
+	const bool active = settings::navPanEnabled
+		&& (APP->window->getMods() & RACK_MOD_MASK) == GLFW_MOD_ALT;
+
+	if (active != wasActive) {
+		internal->navActive = active;
+		// While active, framebuffers must not invalidate on scale or subpixel change.
+		// Letting the existing textures stretch is what makes zooming smooth, and it also
+		// stops panel brightness reduction re-filtering every panel every frame.
+		navModeSetActive(active);
+		if (!active)
+			internal->navHoverFresh = false;
+	}
+
+	if (!active)
+		return;
+
+	// Edge scroll: a steady rate while the pointer sits within the margin of an edge, so a
+	// rack wider than one pointer sweep can be crossed without releasing. Steady, not
+	// ramped — Wcoast chose that deliberately.
+	if (!internal->navHoverFresh)
+		return;
+	internal->navHoverFresh = false;
+
+	const math::Vec size = getSize();
+	const float margin = settings::navEdgeMargin;
+	// Per second, not per frame: Rack limits itself to 30 Hz on macOS while the browser
+	// this came from runs at 60, so a per-frame step would travel at half speed.
+	const float step = settings::navEdgeRate * (float) APP->window->getLastFrameDuration();
+
+	math::Vec delta;
+	if (internal->navMousePos.x <= margin)
+		delta.x = -step;
+	else if (internal->navMousePos.x >= size.x - margin)
+		delta.x = step;
+	if (internal->navMousePos.y <= margin)
+		delta.y = -step;
+	else if (internal->navMousePos.y >= size.y - margin)
+		delta.y = step;
+
+	// Same sign as the pointer motion below: at the left edge you reveal what is to the
+	// left, which is also what moving the pointer left does.
+	offset = offset.plus(delta);
 }
 
 
@@ -158,12 +224,19 @@ void RackScrollWidget::onHoverScroll(const HoverScrollEvent& e) {
 	bool doZoom = mods & RACK_MOD_CTRL;
 	if (settings::mouseWheelZoom)
 		doZoom ^= true;
+	// While navigating, the wheel always zooms, and children are not offered it — they are
+	// non-interactive for the duration anyway. Cmd keeps working exactly as in stock Rack.
+	const bool navZoom = internal->navActive;
+	if (navZoom)
+		doZoom = true;
 
 	if (doZoom) {
-		// Dispatch to children first and zoom only if they don't consume
-		OpaqueWidget::onHoverScroll(e);
-		if (e.isConsumed())
-			return;
+		if (!navZoom) {
+			// Dispatch to children first and zoom only if they don't consume
+			OpaqueWidget::onHoverScroll(e);
+			if (e.isConsumed())
+				return;
+		}
 		// Increase zoom
 		float zoomDelta = e.scrollDelta.y / 50 / 4;
 		if (settings::invertZoom)
@@ -179,6 +252,23 @@ void RackScrollWidget::onHoverScroll(const HoverScrollEvent& e) {
 
 
 void RackScrollWidget::onHover(const HoverEvent& e) {
+	if (internal->navActive) {
+		internal->navMousePos = e.pos;
+		internal->navHoverFresh = true;
+
+		// THE VIEW CHASES THE POINTER: move the pointer toward what you want to see, so
+		// the content slides the opposite way and nothing stays synchronised underneath.
+		// This is deliberately NOT Rack's Option-drag, which is grab-and-drag. Mixing the
+		// two conventions would make edge-scrolling reverse direction. See design/zoom-pan.md.
+		if (!e.mouseDelta.isZero()) {
+			offset = offset.plus(e.mouseDelta.mult(settings::navPanGain).div(getAbsoluteZoom()));
+		}
+		// Consumed so children get no hover: no tooltips, no knob highlights while
+		// navigating.
+		e.consume(this);
+		return;
+	}
+
 	ScrollWidget::onHover(e);
 
 	// Hide menu bar if fullscreen and moving mouse over the RackScrollWidget
@@ -189,6 +279,15 @@ void RackScrollWidget::onHover(const HoverEvent& e) {
 
 
 void RackScrollWidget::onButton(const ButtonEvent& e) {
+	// Block clicks from reaching modules while navigating, so a stray click cannot grab a
+	// knob mid-gesture. Releases are let through so anything already in flight can finish.
+	// Mostly this only adds right and middle click: ScrollWidget already steals
+	// Option-plus-left before children.
+	if (internal->navActive && e.action == GLFW_PRESS) {
+		e.consume(this);
+		return;
+	}
+
 	ScrollWidget::onButton(e);
 	if (e.isConsumed())
 		return;

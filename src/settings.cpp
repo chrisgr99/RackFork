@@ -59,6 +59,13 @@ float panelDimMaxAttenuation = 0.5f;
 float panelDimContrastGain = 0.f;
 float panelDimEdgeSensitivity = 0.2f;
 bool controlAppearanceEnabled = false;
+// Option-held navigation. Constants ported from Wcoast; the edge rate is converted from
+// its 14 px/frame at 60 Hz, because Rack limits itself to 30 Hz on macOS and a per-frame
+// value would travel at half speed. See design/zoom-pan.md.
+bool navPanEnabled = true;
+float navPanGain = 3.f;
+float navEdgeMargin = 24.f;
+float navEdgeRate = 840.f;
 std::map<std::string, std::map<std::string, float>> panelDimStrengths;
 
 float getPanelDimStrength(const std::string& pluginSlug, const std::string& moduleSlug) {
@@ -234,6 +241,10 @@ json_t* toJson() {
 	json_object_set_new(rootJ, "panelDimContrastGain", json_real(panelDimContrastGain));
 	json_object_set_new(rootJ, "panelDimEdgeSensitivity", json_real(panelDimEdgeSensitivity));
 	json_object_set_new(rootJ, "controlAppearanceEnabled", json_boolean(controlAppearanceEnabled));
+	json_object_set_new(rootJ, "navPanEnabled", json_boolean(navPanEnabled));
+	json_object_set_new(rootJ, "navPanGain", json_real(navPanGain));
+	json_object_set_new(rootJ, "navEdgeMargin", json_real(navEdgeMargin));
+	json_object_set_new(rootJ, "navEdgeRate", json_real(navEdgeRate));
 	{
 		json_t* strengthsJ = json_object();
 		for (const auto& pluginPair : panelDimStrengths) {
@@ -503,6 +514,22 @@ void fromJson(json_t* rootJ) {
 	json_t* controlAppearanceEnabledJ = json_object_get(rootJ, "controlAppearanceEnabled");
 	if (controlAppearanceEnabledJ)
 		controlAppearanceEnabled = json_boolean_value(controlAppearanceEnabledJ);
+
+	json_t* navPanEnabledJ = json_object_get(rootJ, "navPanEnabled");
+	if (navPanEnabledJ)
+		navPanEnabled = json_boolean_value(navPanEnabledJ);
+
+	json_t* navPanGainJ = json_object_get(rootJ, "navPanGain");
+	if (navPanGainJ)
+		navPanGain = json_number_value(navPanGainJ);
+
+	json_t* navEdgeMarginJ = json_object_get(rootJ, "navEdgeMargin");
+	if (navEdgeMarginJ)
+		navEdgeMargin = json_number_value(navEdgeMarginJ);
+
+	json_t* navEdgeRateJ = json_object_get(rootJ, "navEdgeRate");
+	if (navEdgeRateJ)
+		navEdgeRate = json_number_value(navEdgeRateJ);
 
 	json_t* panelDimStrengthsJ = json_object_get(rootJ, "panelDimStrengths");
 	if (panelDimStrengthsJ) {

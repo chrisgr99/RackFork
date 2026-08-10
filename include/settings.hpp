@@ -104,6 +104,15 @@ extern std::map<std::string, std::map<std::string, float>> panelDimStrengths;
 /** Draws replacement knob and jack graphics over every module's own artwork, so controls
 are legible and consistent regardless of who drew them. See design/control-appearance.md. */
 extern bool controlAppearanceEnabled;
+/** Option-held navigation: moving the pointer pans, scroll zooms, and holding near an
+edge keeps travelling. See design/zoom-pan.md. */
+extern bool navPanEnabled;
+/** View pixels travelled per pointer pixel moved. Wcoast uses 3, deliberately coarse. */
+extern float navPanGain;
+/** Pointer within this many pixels of a viewport edge auto-scrolls that way. */
+extern float navEdgeMargin;
+/** Steady edge-scroll speed in pixels per second. Wcoast's 14 px/frame at 60 Hz. */
+extern float navEdgeRate;
 /** Returns the stored override, or -1 if this panel has none. */
 float getPanelDimStrength(const std::string& pluginSlug, const std::string& moduleSlug);
 void setPanelDimStrength(const std::string& pluginSlug, const std::string& moduleSlug, float strength);
