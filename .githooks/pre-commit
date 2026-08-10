@@ -1,0 +1,25 @@
+#!/bin/sh
+# RackFork guard: nothing under res/ may ever be modified in this repo.
+#
+# Rack's panel graphics are licensed CC BY-NC-ND. Verbatim redistribution is
+# allowed; derivative works are not. Editing a file under res/ and publishing it
+# would be a real license violation, and a public push cannot be undone.
+#
+# Your own original panel artwork belongs in resmod/, served through the panel
+# override path. See CLAUDE.md.
+
+staged=$(git diff --cached --name-only --diff-filter=ACMRD -- res)
+
+if [ -n "$staged" ]; then
+	echo "COMMIT BLOCKED: staged changes under res/" >&2
+	echo "$staged" | sed 's/^/    /' >&2
+	echo "" >&2
+	echo "res/ artwork is CC BY-NC-ND (no derivative works)." >&2
+	echo "Put your own original panels in resmod/ instead." >&2
+	echo "" >&2
+	echo "Unstage with:  git restore --staged res" >&2
+	echo "Discard with:  git checkout -- res" >&2
+	exit 1
+fi
+
+exit 0

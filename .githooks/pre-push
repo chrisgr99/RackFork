@@ -1,0 +1,45 @@
+#!/bin/sh
+# RackFork guard: refuse to push if res/ differs from the pinned baseline.
+#
+# This is the check that actually protects you. The pre-commit hook can be
+# bypassed with --no-verify, and a merge can drag a change in without any
+# commit of yours touching res/ directly. This compares the whole res/ tree of
+# whatever you are about to push against the baseline tag, so it catches every
+# route in, no matter how many commits back the change happened.
+#
+# A push to a public repo is permanent: GitHub forks share object storage with
+# the parent network, so a pushed file stays reachable even after a history
+# rewrite. Prevention is the only real control.
+#
+# Baseline defaults to v2.6.6. After a deliberate upstream merge that legitimately
+# updates res/, move it forward:
+#     git config rackfork.resBaseline v2.6.7
+
+baseline=$(git config --get rackfork.resBaseline || echo v2.6.6)
+zero=0000000000000000000000000000000000000000
+
+if ! git rev-parse --verify --quiet "$baseline" >/dev/null; then
+	echo "PUSH BLOCKED: baseline ref '$baseline' not found." >&2
+	echo "Fetch tags, or set rackfork.resBaseline to a ref that exists." >&2
+	exit 1
+fi
+
+status=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+	# Branch deletion: nothing to inspect.
+	[ "$local_sha" = "$zero" ] && continue
+
+	changed=$(git diff --name-only "$baseline" "$local_sha" -- res)
+
+	if [ -n "$changed" ]; then
+		echo "PUSH BLOCKED: $local_ref differs from $baseline under res/" >&2
+		echo "$changed" | sed 's/^/    /' >&2
+		echo "" >&2
+		echo "res/ artwork is CC BY-NC-ND (no derivative works), and a public" >&2
+		echo "push cannot be undone. Your own original panels belong in resmod/." >&2
+		status=1
+	fi
+done
+
+exit $status
