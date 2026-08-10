@@ -263,10 +263,11 @@ void RackScrollWidget::onHover(const HoverEvent& e) {
 		if (!e.mouseDelta.isZero()) {
 			offset = offset.plus(e.mouseDelta.mult(settings::navPanGain).div(getAbsoluteZoom()));
 		}
-		// Consumed so children get no hover: no tooltips, no knob highlights while
-		// navigating.
-		e.consume(this);
-		return;
+		// NOT consumed, deliberately. RackWidget::onHover is what keeps
+		// RackWidget::getMousePos() current, and that is what an in-flight cable's loose
+		// end follows. Consuming the hover here froze a carried cable in mid-air until
+		// Option was released. Tooltips and knob highlights during navigation are a small
+		// price for a cable that keeps up. See design/zoom-pan.md.
 	}
 
 	ScrollWidget::onHover(e);

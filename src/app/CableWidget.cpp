@@ -1,4 +1,6 @@
 #include <app/CableWidget.hpp>
+#include "controlAppearance.hpp"
+#include "cableHandle.hpp"
 #include <widget/SvgWidget.hpp>
 #include <widget/TransformWidget.hpp>
 #include <app/Scene.hpp>
@@ -266,7 +268,9 @@ void CableWidget::fromJson(json_t* rootJ) {
 }
 
 
-static math::Vec getSlumpPos(math::Vec pos1, math::Vec pos2) {
+/** Exposed through cableHandle.hpp as cableSlumpPos so the grab handle samples the same
+curve the cable is drawn with. One formula, one source of truth. */
+math::Vec cableSlumpPos(math::Vec pos1, math::Vec pos2) {
 	float dist = pos1.minus(pos2).norm();
 	math::Vec avg = pos1.plus(pos2).div(2);
 	// Lower average point as distance increases
@@ -278,7 +282,7 @@ static math::Vec getSlumpPos(math::Vec pos1, math::Vec pos2) {
 void CableWidget::step() {
 	math::Vec outputPos = getOutputPos();
 	math::Vec inputPos = getInputPos();
-	math::Vec slump = getSlumpPos(outputPos, inputPos);
+	math::Vec slump = cableSlumpPos(outputPos, inputPos);
 
 	NVGcolor colorOpaque = color;
 	colorOpaque.a = 1.f;
@@ -298,6 +302,89 @@ void CableWidget::step() {
 	inputPlug->setColor(colorOpaque);
 
 	Widget::step();
+}
+
+
+/** Marching ants along a cable, showing which way the signal runs.
+
+nanovg has NO dash support — not a single mention of it in the header — so what is one
+stroke-dasharray attribute in SVG has to be built by hand here: sample the curve, walk it
+by arc length, and emit the "on" stretches as separate strokes.
+
+Ported from Wcoast: black dashes crawling source to destination at half the cable's width,
+butt-capped, their length keyed to the DESTINATION's signal family so a gate cable is
+dashed coarsely and an audio cable finely. The crawl is a slow drift and is NOT
+synchronised with the signal — it only states direction.
+*/
+static void drawFlowDashes(NVGcontext* vg, math::Vec p0, math::Vec ctrl, math::Vec p1,
+	float thickness, float dashUnits) {
+
+	// Sample the quadratic into a polyline. 48 is plenty: the dashes are short relative to
+	// the curve, so the error inside one dash is far below a pixel.
+	const int SAMPLES = 48;
+	math::Vec pts[SAMPLES + 1];
+	float cum[SAMPLES + 1];
+	cum[0] = 0.f;
+	pts[0] = p0;
+	for (int i = 1; i <= SAMPLES; i++) {
+		const float t = (float) i / SAMPLES;
+		const float u = 1.f - t;
+		pts[i] = p0.mult(u * u).plus(ctrl.mult(2.f * u * t)).plus(p1.mult(t * t));
+		cum[i] = cum[i - 1] + pts[i].minus(pts[i - 1]).norm();
+	}
+	const float total = cum[SAMPLES];
+	if (total <= 0.f)
+		return;
+
+	const float dash = dashUnits * thickness;
+	const float gap = 2.6f * thickness;      // Wcoast FLOW_GAP, in cable widths
+	const float period = dash + gap;
+	if (period <= 0.f)
+		return;
+
+	// Wcoast crawls at 5.5 mm/s. Rack works in its own pixels at 75 DPI, so a millimetre
+	// is 75/25.4 px: about 16 px/s, which reads as the same slow drift.
+	const float speed = 5.5f * (75.f / 25.4f);
+	const float phase = std::fmod((float) APP->window->getFrameTime() * speed, period);
+
+	// Returns the point at arc length s, interpolating within the polyline.
+	auto pointAt = [&](float s) -> math::Vec {
+		if (s <= 0.f)
+			return pts[0];
+		if (s >= total)
+			return pts[SAMPLES];
+		int i = 1;
+		while (i < SAMPLES && cum[i] < s)
+			i++;
+		const float segLen = cum[i] - cum[i - 1];
+		const float f = (segLen > 0.f) ? (s - cum[i - 1]) / segLen : 0.f;
+		return pts[i - 1].plus(pts[i].minus(pts[i - 1]).mult(f));
+	};
+
+	nvgStrokeColor(vg, nvgRGB(0, 0, 0));
+	nvgStrokeWidth(vg, thickness / 2.f);
+	nvgLineCap(vg, NVG_BUTT);
+
+	// Start one period behind so the first dash is not clipped as it crawls in.
+	for (float start = phase - period; start < total; start += period) {
+		const float a = std::fmax(0.f, start);
+		const float b = std::fmin(total, start + dash);
+		if (b <= a)
+			continue;
+
+		nvgBeginPath(vg);
+		math::Vec pa = pointAt(a);
+		nvgMoveTo(vg, pa.x, pa.y);
+		// Follow the curve through any polyline vertices this dash spans, so a dash on a
+		// steeply bent cable does not cut the corner.
+		for (int i = 1; i < SAMPLES; i++) {
+			if (cum[i] > a && cum[i] < b)
+				nvgLineTo(vg, pts[i].x, pts[i].y);
+		}
+		math::Vec pb = pointAt(b);
+		nvgLineTo(vg, pb.x, pb.y);
+		nvgStroke(vg);
+	}
 }
 
 
@@ -343,7 +430,7 @@ void CableWidget::drawLayer(const DrawArgs& args, int layer) {
 	float thickness = thick ? 9.0 : 6.0;
 
 	// The endpoints are off-center
-	math::Vec slump = getSlumpPos(outputPos, inputPos);
+	math::Vec slump = cableSlumpPos(outputPos, inputPos);
 	float dist = 14.f;
 	outputPos = outputPos.plus(slump.minus(outputPos).normalize().mult(dist));
 	inputPos = inputPos.plus(slump.minus(inputPos).normalize().mult(dist));
@@ -377,6 +464,17 @@ void CableWidget::drawLayer(const DrawArgs& args, int layer) {
 		nvgStrokeColor(args.vg, color::mult(color, 0.95));
 		nvgStrokeWidth(args.vg, thickness - 1.0);
 		nvgStroke(args.vg);
+
+		// Flow direction. Only on a complete cable: the dash length comes from the
+		// destination's signal family, and a cable in flight has no destination yet.
+		if (settings::cableFlowDashes && isComplete() && inputPort) {
+			drawFlowDashes(args.vg, outputPos, slump, inputPos, thickness,
+				appearance::portFlowDashLength(inputPort));
+		}
+
+		// The grab handle, if this is the cable currently showing one. Drawn last so the
+		// pill reads as a swelling of the cable rather than something under it.
+		cableHandleDraw(this, args.vg, thickness);
 	}
 
 	Widget::drawLayer(args, layer);

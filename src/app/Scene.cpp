@@ -3,6 +3,7 @@
 #include <osdialog.h>
 
 #include <app/Scene.hpp>
+#include "cableClick.hpp"
 #include <app/Browser.hpp>
 #include <app/TipWindow.hpp>
 #include <app/MenuBar.hpp>
@@ -336,6 +337,24 @@ void Scene::onHoverKey(const HoverKeyEvent& e) {
 	// Key commands that can be overridden by children
 	if (e.action == GLFW_PRESS || e.action == GLFW_REPEAT) {
 		// Alternative key command for exiting fullscreen, since F11 doesn't work reliably on Mac due to "Show desktop" OS binding.
+		if (e.isKeyCommand(GLFW_KEY_ESCAPE, 0)) {
+			// Put down a cable in flight. Checked before the fullscreen exit below so
+			// Escape means "abandon this cable" while you are carrying one, and keeps its
+			// usual meaning otherwise. See design/cable-click.md.
+			if (settings::cableClickToConnect && cableClickActive()) {
+				cableClickCancel();
+				e.consume(this);
+				return;
+			}
+		}
+		// Delete abandons a carried cable too. Checked as its own command so it does not
+		// disturb Delete's normal meaning when nothing is being carried.
+		if (settings::cableClickToConnect && cableClickActive()
+			&& (e.isKeyCommand(GLFW_KEY_DELETE, 0) || e.isKeyCommand(GLFW_KEY_BACKSPACE, 0))) {
+			cableClickCancel();
+			e.consume(this);
+			return;
+		}
 		if (e.isKeyCommand(GLFW_KEY_ESCAPE, 0)) {
 			if (APP->window->isFullScreen()) {
 				APP->window->setFullScreen(false);

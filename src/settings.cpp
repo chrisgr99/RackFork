@@ -66,6 +66,10 @@ bool navPanEnabled = true;
 float navPanGain = 3.f;
 float navEdgeMargin = 24.f;
 float navEdgeRate = 840.f;
+bool cableClickToConnect = true;
+bool cableAutoColor = true;
+bool cableFlowDashes = true;
+bool cableGrabHandles = true;
 std::map<std::string, std::map<std::string, float>> panelDimStrengths;
 
 float getPanelDimStrength(const std::string& pluginSlug, const std::string& moduleSlug) {
@@ -245,6 +249,10 @@ json_t* toJson() {
 	json_object_set_new(rootJ, "navPanGain", json_real(navPanGain));
 	json_object_set_new(rootJ, "navEdgeMargin", json_real(navEdgeMargin));
 	json_object_set_new(rootJ, "navEdgeRate", json_real(navEdgeRate));
+	json_object_set_new(rootJ, "cableClickToConnect", json_boolean(cableClickToConnect));
+	json_object_set_new(rootJ, "cableAutoColor", json_boolean(cableAutoColor));
+	json_object_set_new(rootJ, "cableFlowDashes", json_boolean(cableFlowDashes));
+	json_object_set_new(rootJ, "cableGrabHandles", json_boolean(cableGrabHandles));
 	{
 		json_t* strengthsJ = json_object();
 		for (const auto& pluginPair : panelDimStrengths) {
@@ -530,6 +538,22 @@ void fromJson(json_t* rootJ) {
 	json_t* navEdgeRateJ = json_object_get(rootJ, "navEdgeRate");
 	if (navEdgeRateJ)
 		navEdgeRate = json_number_value(navEdgeRateJ);
+
+	json_t* cableClickToConnectJ = json_object_get(rootJ, "cableClickToConnect");
+	if (cableClickToConnectJ)
+		cableClickToConnect = json_boolean_value(cableClickToConnectJ);
+
+	json_t* cableAutoColorJ = json_object_get(rootJ, "cableAutoColor");
+	if (cableAutoColorJ)
+		cableAutoColor = json_boolean_value(cableAutoColorJ);
+
+	json_t* cableFlowDashesJ = json_object_get(rootJ, "cableFlowDashes");
+	if (cableFlowDashesJ)
+		cableFlowDashes = json_boolean_value(cableFlowDashesJ);
+
+	json_t* cableGrabHandlesJ = json_object_get(rootJ, "cableGrabHandles");
+	if (cableGrabHandlesJ)
+		cableGrabHandles = json_boolean_value(cableGrabHandlesJ);
 
 	json_t* panelDimStrengthsJ = json_object_get(rootJ, "panelDimStrengths");
 	if (panelDimStrengthsJ) {

@@ -1,4 +1,6 @@
 #include <app/PortWidget.hpp>
+#include "cableClick.hpp"
+#include "controlAppearance.hpp"
 #include <app/Scene.hpp>
 #include <ui/MenuItem.hpp>
 #include <ui/MenuSeparator.hpp>
@@ -389,6 +391,16 @@ void PortWidget::draw(const DrawArgs& args) {
 void PortWidget::onButton(const ButtonEvent& e) {
 	OpaqueWidget::onButton(e);
 
+	// Right-click abandons a cable in flight rather than opening the menu. With no button
+	// held there is no release to cancel on, so cancelling needs its own gesture.
+	// See design/cable-click.md.
+	if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT
+		&& settings::cableClickToConnect && cableClickActive()) {
+		cableClickCancel();
+		e.consume(this);
+		return;
+	}
+
 	if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_RIGHT) {
 		createContextMenu();
 		e.consume(this);
@@ -401,16 +413,54 @@ void PortWidget::onButton(const ButtonEvent& e) {
 		e.consume(NULL);
 		return;
 	}
+
+	// Click to pick up a cable, click again to drop it. Consuming null suppresses
+	// onDragStart, which is what keeps this from fighting the button-held drag model
+	// rather than coexisting badly with it. See design/cable-click.md.
+	if (settings::cableClickToConnect && e.action == GLFW_PRESS
+		&& e.button == GLFW_MOUSE_BUTTON_LEFT && (e.mods & RACK_MOD_MASK) == 0) {
+		if (cableClickActive())
+			cableClickFinish(this);
+		else
+			cableClickStart(this);
+		// Tell the ancestor RackWidget that a port took this click, since consuming with
+		// NULL below leaves it no other way to know.
+		cableClickNotePortClick();
+		e.consume(NULL);
+		return;
+	}
 }
 
 
 void PortWidget::onEnter(const EnterEvent& e) {
 	createTooltip();
+
+	// Show where the carried cable would land. onDragEnter does this during a drag; with
+	// no button held it has to happen on ordinary hover instead.
+	if (settings::cableClickToConnect && cableClickActive()) {
+		for (CableWidget* cw : APP->scene->rack->getIncompleteCables()) {
+			if (cw->getPort(type))
+				continue;
+			if (type == engine::Port::OUTPUT)
+				cw->hoveredOutputPort = this;
+			else
+				cw->hoveredInputPort = this;
+		}
+	}
 }
 
 
 void PortWidget::onLeave(const LeaveEvent& e) {
 	destroyTooltip();
+
+	if (settings::cableClickToConnect) {
+		for (CableWidget* cw : APP->scene->rack->getIncompleteCables()) {
+			if (cw->hoveredOutputPort == this)
+				cw->hoveredOutputPort = NULL;
+			if (cw->hoveredInputPort == this)
+				cw->hoveredInputPort = NULL;
+		}
+	}
 }
 
 
@@ -566,6 +616,10 @@ void PortWidget::onDragDrop(const DragDropEvent& e) {
 				continue;
 			}
 		}
+		// Same destination colouring as the click path, so the two routes cannot disagree.
+		if (settings::cableAutoColor && cw->inputPort)
+			cw->color = appearance::portColor(cw->inputPort);
+
 		cw->updateCable();
 
 		// This should always be true since the ComplexAction is created in onDragStart()

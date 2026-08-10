@@ -9,6 +9,7 @@
 // Panel brightness reduction. Private header, not part of the plugin API.
 #include "../window/panelDim.hpp"
 #include "controlAppearance.hpp"
+#include "cableClick.hpp"
 #include <widget/OpaqueWidget.hpp>
 #include <ui/Button.hpp>
 #include <ui/MenuItem.hpp>
@@ -975,6 +976,27 @@ struct ViewButton : MenuButton {
 				settings::panelDimStrengths.clear();
 				window::panelDimRefresh();
 			}));
+		}));
+
+		// Cable behaviour and appearance — see design/cable-click.md and
+		// design/cable-appearance.md
+		menu->addChild(createSubmenuItem("Cables", "", [=](ui::Menu* menu) {
+			menu->addChild(createBoolPtrMenuItem("Click to connect", "", &settings::cableClickToConnect));
+			menu->addChild(createBoolPtrMenuItem("Colour by destination port", "", &settings::cableAutoColor));
+			menu->addChild(createBoolPtrMenuItem("Show signal flow direction", "", &settings::cableFlowDashes));
+			menu->addChild(createBoolPtrMenuItem("Grab handles near jacks", "", &settings::cableGrabHandles));
+
+			menu->addChild(new ui::MenuSeparator);
+			// Colour is written at connect time, so cables that predate the feature keep
+			// their old colour. This applies the scheme to an existing patch.
+			menu->addChild(createMenuItem("Recolour existing cables now", "", []() {
+				cableRecolourAll();
+			}));
+
+			menu->addChild(new ui::MenuSeparator);
+			menu->addChild(createMenuLabel("Dashes crawl from source to destination."));
+			menu->addChild(createMenuLabel("Long dashes are gates, medium CV, short audio."));
+			menu->addChild(createMenuLabel("The crawl shows direction, not the signal."));
 		}));
 
 		// Option-held navigation — see design/zoom-pan.md

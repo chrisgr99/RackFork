@@ -6,6 +6,8 @@
 #include <osdialog.h>
 
 #include <app/RackWidget.hpp>
+#include "cableClick.hpp"
+#include "cableHandle.hpp"
 #include <widget/TransparentWidget.hpp>
 #include <app/RailWidget.hpp>
 #include <app/Scene.hpp>
@@ -189,6 +191,11 @@ void RackWidget::onHover(const HoverEvent& e) {
 	// Set before calling children's onHover()
 	internal->mousePos = e.pos;
 
+	// Cable grab handles. Rack has no cable hit-testing of its own — a CableWidget's box is
+	// a fixed 9x9 with no relation to where the cable runs — so proximity to the curve is
+	// tested explicitly here rather than through event dispatch.
+	cableHandleHover(e.pos);
+
 	OpaqueWidget::onHover(e);
 }
 
@@ -197,7 +204,36 @@ void RackWidget::onHoverKey(const HoverKeyEvent& e) {
 }
 
 void RackWidget::onButton(const ButtonEvent& e) {
+	// The grab handle gets first refusal, BEFORE children. It sits over a module panel, and
+	// ModuleWidget consumes clicks, so anything checked after dispatch would never see it.
+	if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+		if (cableHandleClick(e.pos)) {
+			// Consume NULL, not `this`. Naming a target makes that widget the dragged
+			// widget, so RackWidget::onDragStart would run — deselecting everything and
+			// starting a selection rectangle that then sweeps across the rack for as long
+			// as the cable is carried, leaving modules selected afterwards. A NULL target
+			// suppresses the drag entirely, which is the same reason PortWidget consumes
+			// NULL for click-to-connect.
+			e.consume(NULL);
+			return;
+		}
+	}
+
 	OpaqueWidget::onButton(e);
+
+	// A click that lands anywhere other than a port puts down a cable in flight. Checked
+	// after dispatch so ports get first refusal, and by inspecting the event's target
+	// rather than its position, because the target is exactly "the widget that took this
+	// click". See design/cable-click.md.
+	// A port consumes its click with a NULL target to suppress dragging, so the target
+	// cannot be used to tell "landed on a port" from "landed on a panel" — it is NULL in
+	// both cases. Ask the port directly instead.
+	const bool portTookIt = cableClickTakePortClick();
+	if (settings::cableClickToConnect && cableClickActive() && !portTookIt
+		&& e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+		cableClickCancel();
+	}
+
 	if (e.isConsumed())
 		return;
 

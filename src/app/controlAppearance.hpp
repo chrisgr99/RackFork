@@ -14,6 +14,7 @@ namespace rack {
 
 namespace app {
 struct ModuleWidget;
+struct PortWidget;
 }
 
 namespace appearance {
@@ -35,6 +36,19 @@ Iterating on how these look is the whole job at first, and restarting Rack for e
 attempt would make that unbearable.
 */
 void reloadDefinitions();
+
+
+/** The colour this port carries, resolved exactly as the drawn jack resolves it: the
+module's definition file if it names one, otherwise guessed from the port's name.
+
+Shared with cables so a cable coloured by its destination cannot disagree with the jack it
+plugs into. */
+NVGcolor portColor(app::PortWidget* port);
+
+/** Dash length for the flow animation, in cable widths, keyed by the port's signal family.
+Ported from Wcoast's FLOW_DASH: audio 1.6, control and pitch 3.4, trigger 5.6 — so gate
+signals get the longest dashes and audio the shortest. */
+float portFlowDashLength(app::PortWidget* port);
 
 
 } // namespace appearance

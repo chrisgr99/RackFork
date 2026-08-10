@@ -104,6 +104,11 @@ into view.
   grab a knob. Mostly free: `ScrollWidget::onButton` already steals Option-plus-left
   before children, so only right and middle click needed adding. Wcoast does the same,
   suppressing `contextmenu` while Option is held.
+- **The hover event must NOT be consumed.** It is tempting, to suppress tooltips and knob
+  highlights during navigation. But `RackWidget::onHover` is what keeps
+  `RackWidget::getMousePos()` current, and that is what an in-flight cable's loose end
+  follows — consuming the hover freezes a carried cable in mid-air until Option is
+  released. Tooltips during navigation are the lesser problem.
 - **Edge-scroll needs a fresh pointer position.** It reads the last position seen by
   `onHover`, and only runs on a frame where a hover actually arrived. Move the pointer
   off the rack — onto the menu bar, say — and edge-scrolling stops rather than running

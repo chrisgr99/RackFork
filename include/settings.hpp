@@ -113,6 +113,19 @@ extern float navPanGain;
 extern float navEdgeMargin;
 /** Steady edge-scroll speed in pixels per second. Wcoast's 14 px/frame at 60 Hz. */
 extern float navEdgeRate;
+/** Cables are picked up and dropped by clicking a port, with no button held in between.
+See design/cable-click.md. */
+extern bool cableClickToConnect;
+/** New cables take the colour of their destination port. Set at connect time rather than
+computed at draw time, so it persists in the patch and stays user-editable through Rack's
+own cable colour menu. See design/cable-appearance.md. */
+extern bool cableAutoColor;
+/** Hovering a cable near a jack reveals a pill-shaped handle; clicking it lifts that end
+off the port and leaves you carrying the cable. See design/cable-handle.md. */
+extern bool cableGrabHandles;
+/** Black dashes crawl along each cable from source to destination, their length keyed to
+the destination's signal family. */
+extern bool cableFlowDashes;
 /** Returns the stored override, or -1 if this panel has none. */
 float getPanelDimStrength(const std::string& pluginSlug, const std::string& moduleSlug);
 void setPanelDimStrength(const std::string& pluginSlug, const std::string& moduleSlug, float strength);

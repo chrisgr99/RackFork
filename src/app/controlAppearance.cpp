@@ -471,6 +471,54 @@ static void drawRecursive(widget::Widget* w, const widget::Widget::DrawArgs& arg
 }
 
 
+/** Resolves a port's family once, honouring a definition override. */
+static std::string resolveFamily(app::PortWidget* port, NVGcolor* colorOut) {
+	std::string name;
+	if (engine::PortInfo* info = port->getPortInfo())
+		name = info->getName();
+	std::string family = guessFamily(name);
+	if (colorOut)
+		*colorOut = familyColor(family);
+
+	app::ModuleWidget* mw = port->getAncestorOfType<app::ModuleWidget>();
+	if (!mw || !mw->model || !mw->model->plugin)
+		return family;
+
+	const ModuleDefinition* def = getDefinition(mw->model->plugin->slug, mw->model->slug);
+	if (!def)
+		return family;
+
+	const bool isOutput = (port->type == engine::Port::OUTPUT);
+	const std::string key = (isOutput ? "out:" : "in:") + string::f("%d", port->portId);
+	auto it = def->ports.find(key);
+	if (it != def->ports.end() && it->second.hasColor && colorOut)
+		*colorOut = it->second.color;
+	return family;
+}
+
+
+NVGcolor portColor(app::PortWidget* port) {
+	if (!port)
+		return familyColor("audio");
+	NVGcolor c = familyColor("audio");
+	resolveFamily(port, &c);
+	return c;
+}
+
+
+float portFlowDashLength(app::PortWidget* port) {
+	if (!port)
+		return 3.4f;
+	const std::string family = resolveFamily(port, NULL);
+	if (family == "audio")
+		return 1.6f;
+	if (family == "trigger")
+		return 5.6f;
+	// control and pitch share a length in Wcoast's table.
+	return 3.4f;
+}
+
+
 void drawControls(app::ModuleWidget* mw, const widget::Widget::DrawArgs& args) {
 	if (!settings::controlAppearanceEnabled)
 		return;
