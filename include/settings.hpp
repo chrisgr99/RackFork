@@ -78,6 +78,36 @@ extern bool cpuMeter;
 extern bool lockModules;
 extern bool squeezeModules;
 extern bool preferDarkPanels;
+
+/** Panel brightness reduction — see design/panel-dimming.md.
+Dims large bright panel regions and lifts low-contrast legend text, for low vision.
+These are new standalone globals rather than fields on an existing struct, so they add
+no ABI surface. Appending here is safe for the same reason. */
+extern bool panelDimEnabled;
+/** Spatial scale of the regional luminance estimate, in pixels. */
+extern float panelDimBlurRadius;
+/** Regional luminance below which nothing is dimmed, 0-1. */
+extern float panelDimThreshold;
+/** Multiplier at maximum regional luminance. 0.5 halves the brightest large regions,
+1.0 disables dimming. */
+extern float panelDimMaxAttenuation;
+/** Local contrast amplification, which is what rescues grey-on-grey legend text. */
+extern float panelDimContrastGain;
+/** Edge respect of the blur, 0-1. This is the size-sensitivity dial: low dims small
+bright features too, high spares them while still dimming large areas. */
+extern float panelDimEdgeSensitivity;
+/** Per-panel strength override, pluginSlug -> (moduleSlug -> strength 0-1).
+Absent means "derive a strength from the panel's own measured brightness". Present means
+the user overrode it. Deliberately a separate map rather than a field on ModuleInfo,
+which lives in this SDK header. */
+extern std::map<std::string, std::map<std::string, float>> panelDimStrengths;
+/** Draws replacement knob and jack graphics over every module's own artwork, so controls
+are legible and consistent regardless of who drew them. See design/control-appearance.md. */
+extern bool controlAppearanceEnabled;
+/** Returns the stored override, or -1 if this panel has none. */
+float getPanelDimStrength(const std::string& pluginSlug, const std::string& moduleSlug);
+void setPanelDimStrength(const std::string& pluginSlug, const std::string& moduleSlug, float strength);
+void clearPanelDimStrength(const std::string& pluginSlug, const std::string& moduleSlug);
 /** Maximum screen redraw frequency in Hz, or 0 for unlimited. */
 extern float frameRateLimit;
 /** Interval between autosaves in seconds. */

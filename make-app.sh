@@ -79,6 +79,13 @@ LAUNCHER
 
 chmod +x "$APP/Contents/MacOS/RackFork"
 
+# Ad-hoc code signature. Not about security — it gives the bundle a stable identity for
+# macOS privacy permissions. The user folder lives in ~/Documents, which is TCC
+# protected, so the first launch raises a system consent prompt. An unsigned bundle has a
+# weaker identity, and the granted permission is more likely to be forgotten. Harmless if
+# codesign is unavailable.
+codesign --force --sign - "$APP" 2>/dev/null || echo "note: could not ad-hoc sign (harmless)"
+
 # Make Finder and the Dock notice the new bundle rather than a cached version.
 touch "$APP"
 plutil -lint "$APP/Contents/Info.plist"

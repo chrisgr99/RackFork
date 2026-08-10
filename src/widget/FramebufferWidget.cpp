@@ -2,6 +2,10 @@
 #include <context.hpp>
 #include <random.hpp>
 
+// Panel brightness reduction. Private header, not part of the plugin API.
+// See design/panel-dimming.md.
+#include "../window/panelDim.hpp"
+
 
 namespace rack {
 namespace widget {
@@ -35,6 +39,8 @@ FramebufferWidget::FramebufferWidget() {
 
 
 FramebufferWidget::~FramebufferWidget() {
+	// The panel dim cache holds a GL image for this widget, keyed by pointer.
+	window::panelDimInvalidate(this);
 	deleteFramebuffer();
 	delete internal;
 }
@@ -143,6 +149,12 @@ void FramebufferWidget::draw(const DrawArgs& args) {
 
 	// DEBUG("%f %f %f %f, %f %f", RECT_ARGS(internal->fbBox), VEC_ARGS(internal->fbSize));
 	// DEBUG("offsetI (%f, %f) fbBox (%f, %f; %f, %f)", VEC_ARGS(offsetI), RECT_ARGS(internal->fbBox));
+	// If this framebuffer is a module panel and brightness reduction produced a filtered
+	// copy, draw that instead of the raw framebuffer. Returns -1 for everything else.
+	int image = window::panelDimImage(this);
+	if (image < 0)
+		image = internal->fb->image;
+
 	nvgBeginPath(args.vg);
 	nvgRect(args.vg,
 		offsetI.x + internal->fbBox.pos.x * scaleRatio.x,
@@ -154,7 +166,7 @@ void FramebufferWidget::draw(const DrawArgs& args) {
 		offsetI.y + internal->fbBox.pos.y * scaleRatio.y,
 		internal->fbBox.size.x * scaleRatio.x,
 		internal->fbBox.size.y * scaleRatio.y,
-		0.0, internal->fb->image, 1.0);
+		0.0, image, 1.0);
 	nvgFillPaint(args.vg, paint);
 	nvgFill(args.vg);
 
@@ -270,6 +282,11 @@ void FramebufferWidget::render(math::Vec scale, math::Vec offsetF, math::Rect cl
 		nvgluBindFramebuffer(NULL);
 		nvgluDeleteFramebuffer(oversampledFb);
 	}
+
+	// Brightness reduction, if this framebuffer is a module panel. Runs here rather than
+	// per frame because a panel's artwork is static, so the filtered result is cached
+	// and this only re-filters when the panel is genuinely re-rendered.
+	window::panelDimProcess(this);
 };
 
 
@@ -317,6 +334,8 @@ void FramebufferWidget::onContextCreate(const ContextCreateEvent& e) {
 
 
 void FramebufferWidget::onContextDestroy(const ContextDestroyEvent& e) {
+	// The cached filtered image is a GL resource and dies with the context.
+	window::panelDimInvalidate(this);
 	deleteFramebuffer();
 	setDirty();
 	Widget::onContextDestroy(e);

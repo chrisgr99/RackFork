@@ -6,6 +6,9 @@
 
 #include <app/MenuBar.hpp>
 #include <app/TipWindow.hpp>
+// Panel brightness reduction. Private header, not part of the plugin API.
+#include "../window/panelDim.hpp"
+#include "controlAppearance.hpp"
 #include <widget/OpaqueWidget.hpp>
 #include <ui/Button.hpp>
 #include <ui/MenuItem.hpp>
@@ -279,6 +282,201 @@ struct CableTensionSlider : ui::Slider {
 		quantity = new CableTensionQuantity;
 	}
 	~CableTensionSlider() {
+		delete quantity;
+	}
+};
+
+
+////////////////////
+// Panel brightness reduction — see design/panel-dimming.md
+//
+// Every setter calls panelDimRefresh(), because changing a value has no visible effect
+// on its own: the filter only runs when a panel's framebuffer is re-rendered, and a
+// setting moving does not make it dirty.
+////////////////////
+
+/** How hard the brightest large regions are dimmed. Presented as "strength" running the
+opposite way to the underlying multiplier, because "70% dimming" is easier to reason
+about than "a multiplier of 0.3". */
+struct PanelDimAttenuationQuantity : Quantity {
+	void setValue(float value) override {
+		settings::panelDimMaxAttenuation = 1.f - math::clamp(value, 0.f, 1.f);
+		window::panelDimRefresh();
+	}
+	float getValue() override {
+		return 1.f - settings::panelDimMaxAttenuation;
+	}
+	float getDefaultValue() override {
+		return 0.5f;
+	}
+	float getDisplayValue() override {
+		return getValue() * 100;
+	}
+	void setDisplayValue(float displayValue) override {
+		setValue(displayValue / 100);
+	}
+	std::string getLabel() override {
+		return "Dimming strength";
+	}
+	std::string getUnit() override {
+		return "%";
+	}
+};
+struct PanelDimAttenuationSlider : ui::Slider {
+	PanelDimAttenuationSlider() {
+		quantity = new PanelDimAttenuationQuantity;
+	}
+	~PanelDimAttenuationSlider() {
+		delete quantity;
+	}
+};
+
+
+/** Regional brightness below which nothing is dimmed at all. Raise it to leave
+mid-grey panels alone and act only on the near-white ones. */
+struct PanelDimThresholdQuantity : Quantity {
+	void setValue(float value) override {
+		settings::panelDimThreshold = math::clamp(value, getMinValue(), getMaxValue());
+		window::panelDimRefresh();
+	}
+	float getValue() override {
+		return settings::panelDimThreshold;
+	}
+	float getDefaultValue() override {
+		return 0.5f;
+	}
+	float getMinValue() override {
+		return 0.f;
+	}
+	float getMaxValue() override {
+		return 0.9f;
+	}
+	float getDisplayValue() override {
+		return getValue() * 100;
+	}
+	void setDisplayValue(float displayValue) override {
+		setValue(displayValue / 100);
+	}
+	std::string getLabel() override {
+		return "Brightness threshold";
+	}
+	std::string getUnit() override {
+		return "%";
+	}
+};
+struct PanelDimThresholdSlider : ui::Slider {
+	PanelDimThresholdSlider() {
+		quantity = new PanelDimThresholdQuantity;
+	}
+	~PanelDimThresholdSlider() {
+		delete quantity;
+	}
+};
+
+
+/** Local contrast gain. This is the control that rescues grey-on-grey legend text: it
+amplifies how far each pixel sits from its own surroundings. */
+struct PanelDimContrastQuantity : Quantity {
+	void setValue(float value) override {
+		settings::panelDimContrastGain = math::clamp(value, getMinValue(), getMaxValue());
+		window::panelDimRefresh();
+	}
+	float getValue() override {
+		return settings::panelDimContrastGain;
+	}
+	float getDefaultValue() override {
+		return 0.f;
+	}
+	float getMinValue() override {
+		return 0.f;
+	}
+	float getMaxValue() override {
+		return 4.f;
+	}
+	std::string getLabel() override {
+		return "Text contrast boost";
+	}
+	std::string getDisplayValueString() override {
+		if (getValue() <= 0.f)
+			return "off";
+		return Quantity::getDisplayValueString();
+	}
+};
+struct PanelDimContrastSlider : ui::Slider {
+	PanelDimContrastSlider() {
+		quantity = new PanelDimContrastQuantity;
+	}
+	~PanelDimContrastSlider() {
+		delete quantity;
+	}
+};
+
+
+/** Spatial scale of the regional estimate: how big an area has to be before it counts as
+a region rather than a detail. */
+struct PanelDimRadiusQuantity : Quantity {
+	void setValue(float value) override {
+		settings::panelDimBlurRadius = math::clamp(value, getMinValue(), getMaxValue());
+		window::panelDimRefresh();
+	}
+	float getValue() override {
+		return settings::panelDimBlurRadius;
+	}
+	float getDefaultValue() override {
+		return 50.f;
+	}
+	float getMinValue() override {
+		return 5.f;
+	}
+	float getMaxValue() override {
+		return 200.f;
+	}
+	std::string getLabel() override {
+		return "Area size";
+	}
+	std::string getUnit() override {
+		return " px";
+	}
+};
+struct PanelDimRadiusSlider : ui::Slider {
+	PanelDimRadiusSlider() {
+		quantity = new PanelDimRadiusQuantity;
+	}
+	~PanelDimRadiusSlider() {
+		delete quantity;
+	}
+};
+
+
+/** Edge sensitivity, which is really the size-sensitivity dial. Low values dim every
+bright thing regardless of size, including clusters of small ones. High values spare
+isolated small bright details while still dimming large areas. */
+struct PanelDimEdgeQuantity : Quantity {
+	void setValue(float value) override {
+		settings::panelDimEdgeSensitivity = math::clamp(value, getMinValue(), getMaxValue());
+		window::panelDimRefresh();
+	}
+	float getValue() override {
+		return settings::panelDimEdgeSensitivity;
+	}
+	float getDefaultValue() override {
+		return 0.2f;
+	}
+	float getMinValue() override {
+		return 0.05f;
+	}
+	float getMaxValue() override {
+		return 2.f;
+	}
+	std::string getLabel() override {
+		return "Spare small details";
+	}
+};
+struct PanelDimEdgeSlider : ui::Slider {
+	PanelDimEdgeSlider() {
+		quantity = new PanelDimEdgeQuantity;
+	}
+	~PanelDimEdgeSlider() {
 		delete quantity;
 	}
 };
@@ -631,6 +829,72 @@ struct ViewButton : MenuButton {
 		menu->addChild(createBoolPtrMenuItem(string::translate("MenuBar.view.squeezeModules"), "", &settings::squeezeModules));
 
 		menu->addChild(createBoolPtrMenuItem(string::translate("MenuBar.view.preferDarkPanels"), "", &settings::preferDarkPanels));
+
+		// Panel brightness reduction — see design/panel-dimming.md
+		menu->addChild(createSubmenuItem("Reduce panel brightness", "", [=](ui::Menu* menu) {
+			menu->addChild(createBoolMenuItem("Enabled", "",
+				[]() {
+					return settings::panelDimEnabled;
+				},
+				[](bool state) {
+					settings::panelDimEnabled = state;
+					window::panelDimRefresh();
+				}
+			));
+
+			menu->addChild(new ui::MenuSeparator);
+			menu->addChild(createMenuLabel("Dims large bright areas without flattening"));
+			menu->addChild(createMenuLabel("small details or losing local contrast."));
+			menu->addChild(new ui::MenuSeparator);
+
+			PanelDimAttenuationSlider* attenuationSlider = new PanelDimAttenuationSlider;
+			attenuationSlider->box.size.x = 250.0;
+			menu->addChild(attenuationSlider);
+
+			PanelDimThresholdSlider* thresholdSlider = new PanelDimThresholdSlider;
+			thresholdSlider->box.size.x = 250.0;
+			menu->addChild(thresholdSlider);
+
+			PanelDimContrastSlider* contrastSlider = new PanelDimContrastSlider;
+			contrastSlider->box.size.x = 250.0;
+			menu->addChild(contrastSlider);
+
+			PanelDimRadiusSlider* radiusSlider = new PanelDimRadiusSlider;
+			radiusSlider->box.size.x = 250.0;
+			menu->addChild(radiusSlider);
+
+			PanelDimEdgeSlider* edgeSlider = new PanelDimEdgeSlider;
+			edgeSlider->box.size.x = 250.0;
+			menu->addChild(edgeSlider);
+
+			menu->addChild(new ui::MenuSeparator);
+			menu->addChild(createMenuItem("Forget all per-panel overrides", "", []() {
+				settings::panelDimStrengths.clear();
+				window::panelDimRefresh();
+			}));
+		}));
+
+		// Drawn knobs and jacks — see design/control-appearance.md
+		menu->addChild(createSubmenuItem("Drawn knobs and jacks", "", [=](ui::Menu* menu) {
+			menu->addChild(createBoolMenuItem("Enabled", "",
+				[]() {
+					return settings::controlAppearanceEnabled;
+				},
+				[](bool state) {
+					settings::controlAppearanceEnabled = state;
+				}
+			));
+
+			menu->addChild(new ui::MenuSeparator);
+			menu->addChild(createMenuLabel("Colour states signal family; the dashed"));
+			menu->addChild(createMenuLabel("ring states direction, hugging the outer"));
+			menu->addChild(createMenuLabel("edge for an output and the hole for an input."));
+			menu->addChild(new ui::MenuSeparator);
+
+			menu->addChild(createMenuItem("Reload appearance definitions", "", []() {
+				appearance::reloadDefinitions();
+			}));
+		}));
 	}
 };
 

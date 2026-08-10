@@ -49,6 +49,41 @@ bool cpuMeter = false;
 bool lockModules = false;
 bool squeezeModules = true;
 bool preferDarkPanels = false;
+// Panel brightness reduction. Defaults match the values tuned in GXW, except the
+// contrast gain which starts off so the first launch shows dimming alone and the two
+// effects can be judged separately. See design/panel-dimming.md.
+bool panelDimEnabled = false;
+float panelDimBlurRadius = 50.f;
+float panelDimThreshold = 0.5f;
+float panelDimMaxAttenuation = 0.5f;
+float panelDimContrastGain = 0.f;
+float panelDimEdgeSensitivity = 0.2f;
+bool controlAppearanceEnabled = false;
+std::map<std::string, std::map<std::string, float>> panelDimStrengths;
+
+float getPanelDimStrength(const std::string& pluginSlug, const std::string& moduleSlug) {
+	auto pluginIt = panelDimStrengths.find(pluginSlug);
+	if (pluginIt == panelDimStrengths.end())
+		return -1.f;
+	auto moduleIt = pluginIt->second.find(moduleSlug);
+	if (moduleIt == pluginIt->second.end())
+		return -1.f;
+	return moduleIt->second;
+}
+
+void setPanelDimStrength(const std::string& pluginSlug, const std::string& moduleSlug, float strength) {
+	panelDimStrengths[pluginSlug][moduleSlug] = strength;
+}
+
+void clearPanelDimStrength(const std::string& pluginSlug, const std::string& moduleSlug) {
+	auto pluginIt = panelDimStrengths.find(pluginSlug);
+	if (pluginIt == panelDimStrengths.end())
+		return;
+	pluginIt->second.erase(moduleSlug);
+	if (pluginIt->second.empty())
+		panelDimStrengths.erase(pluginIt);
+}
+
 #if defined ARCH_MAC
 	// Most Mac GPUs can't handle rendering the screen every frame, so use 30 Hz by default.
 	float frameRateLimit = 30.f;
@@ -190,6 +225,28 @@ json_t* toJson() {
 	json_object_set_new(rootJ, "squeezeModules", json_boolean(squeezeModules));
 
 	json_object_set_new(rootJ, "preferDarkPanels", json_boolean(preferDarkPanels));
+
+	// panelDim
+	json_object_set_new(rootJ, "panelDimEnabled", json_boolean(panelDimEnabled));
+	json_object_set_new(rootJ, "panelDimBlurRadius", json_real(panelDimBlurRadius));
+	json_object_set_new(rootJ, "panelDimThreshold", json_real(panelDimThreshold));
+	json_object_set_new(rootJ, "panelDimMaxAttenuation", json_real(panelDimMaxAttenuation));
+	json_object_set_new(rootJ, "panelDimContrastGain", json_real(panelDimContrastGain));
+	json_object_set_new(rootJ, "panelDimEdgeSensitivity", json_real(panelDimEdgeSensitivity));
+	json_object_set_new(rootJ, "controlAppearanceEnabled", json_boolean(controlAppearanceEnabled));
+	{
+		json_t* strengthsJ = json_object();
+		for (const auto& pluginPair : panelDimStrengths) {
+			json_t* pluginJ = json_object();
+			for (const auto& modulePair : pluginPair.second)
+				json_object_set_new(pluginJ, modulePair.first.c_str(), json_real(modulePair.second));
+			if (json_object_size(pluginJ))
+				json_object_set_new(strengthsJ, pluginPair.first.c_str(), pluginJ);
+			else
+				json_decref(pluginJ);
+		}
+		json_object_set_new(rootJ, "panelDimStrengths", strengthsJ);
+	}
 
 	json_object_set_new(rootJ, "frameRateLimit", json_real(frameRateLimit));
 
@@ -417,6 +474,49 @@ void fromJson(json_t* rootJ) {
 	json_t* preferDarkPanelsJ = json_object_get(rootJ, "preferDarkPanels");
 	if (preferDarkPanelsJ)
 		preferDarkPanels = json_boolean_value(preferDarkPanelsJ);
+
+	// panelDim
+	json_t* panelDimEnabledJ = json_object_get(rootJ, "panelDimEnabled");
+	if (panelDimEnabledJ)
+		panelDimEnabled = json_boolean_value(panelDimEnabledJ);
+
+	json_t* panelDimBlurRadiusJ = json_object_get(rootJ, "panelDimBlurRadius");
+	if (panelDimBlurRadiusJ)
+		panelDimBlurRadius = json_number_value(panelDimBlurRadiusJ);
+
+	json_t* panelDimThresholdJ = json_object_get(rootJ, "panelDimThreshold");
+	if (panelDimThresholdJ)
+		panelDimThreshold = json_number_value(panelDimThresholdJ);
+
+	json_t* panelDimMaxAttenuationJ = json_object_get(rootJ, "panelDimMaxAttenuation");
+	if (panelDimMaxAttenuationJ)
+		panelDimMaxAttenuation = json_number_value(panelDimMaxAttenuationJ);
+
+	json_t* panelDimContrastGainJ = json_object_get(rootJ, "panelDimContrastGain");
+	if (panelDimContrastGainJ)
+		panelDimContrastGain = json_number_value(panelDimContrastGainJ);
+
+	json_t* panelDimEdgeSensitivityJ = json_object_get(rootJ, "panelDimEdgeSensitivity");
+	if (panelDimEdgeSensitivityJ)
+		panelDimEdgeSensitivity = json_number_value(panelDimEdgeSensitivityJ);
+
+	json_t* controlAppearanceEnabledJ = json_object_get(rootJ, "controlAppearanceEnabled");
+	if (controlAppearanceEnabledJ)
+		controlAppearanceEnabled = json_boolean_value(controlAppearanceEnabledJ);
+
+	json_t* panelDimStrengthsJ = json_object_get(rootJ, "panelDimStrengths");
+	if (panelDimStrengthsJ) {
+		panelDimStrengths.clear();
+		const char* pluginSlug;
+		json_t* pluginJ;
+		json_object_foreach(panelDimStrengthsJ, pluginSlug, pluginJ) {
+			const char* moduleSlug;
+			json_t* strengthJ;
+			json_object_foreach(pluginJ, moduleSlug, strengthJ) {
+				panelDimStrengths[pluginSlug][moduleSlug] = json_number_value(strengthJ);
+			}
+		}
+	}
 
 	// Legacy setting in Rack <2.2
 	json_t* frameSwapIntervalJ = json_object_get(rootJ, "frameSwapInterval");
